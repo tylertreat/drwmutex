@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jonhoo/drwmutex"
@@ -16,6 +17,7 @@ import (
 const (
 	SYNC int = iota
 	DRWM     = iota
+	ATMV     = iota
 	END      = iota
 )
 
@@ -23,6 +25,36 @@ type L interface {
 	Lock()
 	Unlock()
 	RLocker() sync.Locker
+}
+
+type valueLocker struct {
+	a *AtomicValue
+}
+
+func (v *valueLocker) Lock() {
+	_ = v.a.v.Load()
+}
+
+func (v *valueLocker) Unlock() {
+}
+
+type AtomicValue struct {
+	v  atomic.Value
+	mu sync.Mutex
+}
+
+func (a *AtomicValue) Lock() {
+	a.mu.Lock()
+	_ = a.v.Load()
+}
+
+func (a *AtomicValue) Unlock() {
+	a.v.Store(1)
+	a.mu.Unlock()
+}
+
+func (a *AtomicValue) RLocker() sync.Locker {
+	return &valueLocker{a}
 }
 
 func main() {
@@ -56,6 +88,8 @@ func main() {
 			mx = new(sync.RWMutex)
 		case DRWM:
 			mx = drwmutex.New()
+		case ATMV:
+			mx = new(AtomicValue)
 		}
 
 		start := time.Now()
